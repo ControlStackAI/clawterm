@@ -303,7 +303,7 @@ impl ClawTermApp {
         let mut close_tab: Option<usize> = None;
         let mut open_new = false;
         ui.horizontal(|ui| {
-            ui.label(RichText::new("🦞 ClawTerm").color(ACCENT).strong());
+            ui.label(RichText::new("ClawTerm").color(ACCENT).strong());
             ui.separator();
             for (i, tab) in self.tabs.iter().enumerate() {
                 let name = self
@@ -323,12 +323,12 @@ impl ClawTermApp {
                 }
                 if self.tabs.len() > 1
                     && selected
-                    && ui.small_button(RichText::new("✕").color(INFO_COLOR)).clicked()
+                    && ui.small_button(RichText::new("x").color(INFO_COLOR)).clicked()
                 {
                     close_tab = Some(i);
                 }
             }
-            if ui.button(RichText::new("＋").strong()).clicked() {
+            if ui.button(RichText::new("+").strong()).clicked() {
                 open_new = true;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -414,7 +414,7 @@ impl ClawTermApp {
                 if tab.streaming_block.is_some() {
                     ui.separator();
                     if ui
-                        .button(RichText::new("⏹ stop").color(ERROR_COLOR).small())
+                        .button(RichText::new("[stop]").color(ERROR_COLOR).small())
                         .clicked()
                     {
                         let _ = self.commands.send(Command::Abort {
