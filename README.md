@@ -73,4 +73,4 @@ Contributions should include reproduction steps, OS/toolchain versions, and rele
 
 ## License and attribution
 
-[MIT](LICENSE). The UI uses egui/eframe. Warp-inspired interaction patterns do not mean the AGPL Warp application is bundled; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the documented boundary and attribution. This documentation refresh is not a new dependency-license audit.
+[MIT](LICENSE). The UI uses egui/eframe. Warp-inspired interaction patterns do not mean the Warp application or any Warp crate is bundled; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the documented boundary and attribution. Dependency versions, registry sources, and checksums are pinned in `Cargo.lock`.

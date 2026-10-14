@@ -221,7 +221,11 @@ impl ClawTermApp {
                         }
                     }
                 }
-                Event::History { tab_id, key, messages } => {
+                Event::History {
+                    tab_id,
+                    key,
+                    messages,
+                } => {
                     if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                         if tab.session_key == key && tab.streaming_block.is_none() {
                             tab.blocks.clear();
@@ -323,7 +327,9 @@ impl ClawTermApp {
                 }
                 if self.tabs.len() > 1
                     && selected
-                    && ui.small_button(RichText::new("x").color(INFO_COLOR)).clicked()
+                    && ui
+                        .small_button(RichText::new("x").color(INFO_COLOR))
+                        .clicked()
                 {
                     close_tab = Some(i);
                 }
@@ -375,10 +381,7 @@ impl ClawTermApp {
                     .show_ui(ui, |ui| {
                         for a in &self.agents {
                             let checked = a.id == tab.agent_id;
-                            if ui
-                                .selectable_label(checked, a.display_name())
-                                .clicked()
-                                && !checked
+                            if ui.selectable_label(checked, a.display_name()).clicked() && !checked
                             {
                                 switch_to = Some(a.id.clone());
                             }
@@ -391,8 +394,7 @@ impl ClawTermApp {
                     .width(260.0)
                     .show_ui(ui, |ui| {
                         let is_default = tab.model_ref.is_none();
-                        if ui.selectable_label(is_default, "agent default").clicked()
-                            && !is_default
+                        if ui.selectable_label(is_default, "agent default").clicked() && !is_default
                         {
                             patch_model = Some(None);
                         }
@@ -521,8 +523,7 @@ impl ClawTermApp {
                 .agents
                 .iter()
                 .find(|a| {
-                    a.id.to_lowercase() == wanted
-                        || a.display_name().to_lowercase() == wanted
+                    a.id.to_lowercase() == wanted || a.display_name().to_lowercase() == wanted
                 })
                 .map(|a| a.id.clone());
             match found {
@@ -573,15 +574,9 @@ impl ClawTermApp {
     }
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
-        let new_tab = ctx.input_mut(|i| {
-            i.consume_key(egui::Modifiers::CTRL, Key::T)
-        });
-        let close_tab = ctx.input_mut(|i| {
-            i.consume_key(egui::Modifiers::CTRL, Key::W)
-        });
-        let next_tab = ctx.input_mut(|i| {
-            i.consume_key(egui::Modifiers::CTRL, Key::Tab)
-        });
+        let new_tab = ctx.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, Key::T));
+        let close_tab = ctx.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, Key::W));
+        let next_tab = ctx.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, Key::Tab));
         if new_tab {
             self.open_tab(self.default_agent());
         }

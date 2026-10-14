@@ -13,11 +13,18 @@ use tokio::sync::mpsc::UnboundedReceiver;
 #[derive(Debug)]
 pub enum Command {
     /// Create (or reattach to) the gateway session backing a tab.
-    EnsureSession { tab_id: u64, key: String, agent_id: String },
+    EnsureSession {
+        tab_id: u64,
+        key: String,
+        agent_id: String,
+    },
     /// Send user input into a session.
     Send { key: String, text: String },
     /// Pin/clear the per-session model override (None clears).
-    PatchModel { key: String, model_ref: Option<String> },
+    PatchModel {
+        key: String,
+        model_ref: Option<String>,
+    },
     /// Reload a session transcript for a restored tab.
     LoadHistory { tab_id: u64, key: String },
     /// Abort the active run in a session.
@@ -27,14 +34,40 @@ pub enum Command {
 /// Backend → UI.
 #[derive(Debug)]
 pub enum Event {
-    Ready { agents: Vec<AgentInfo>, models: Vec<ModelInfo> },
-    SessionReady { tab_id: u64, key: String },
-    Delta { key: String, text: String, replace: bool },
-    RunDone { key: String, text: Option<String>, error: Option<String> },
-    History { tab_id: u64, key: String, messages: Vec<HistoryMessage> },
-    ModelPatched { key: String, model_ref: Option<String> },
-    Error { context: String, message: String },
-    Disconnected { message: String },
+    Ready {
+        agents: Vec<AgentInfo>,
+        models: Vec<ModelInfo>,
+    },
+    SessionReady {
+        tab_id: u64,
+        key: String,
+    },
+    Delta {
+        key: String,
+        text: String,
+        replace: bool,
+    },
+    RunDone {
+        key: String,
+        text: Option<String>,
+        error: Option<String>,
+    },
+    History {
+        tab_id: u64,
+        key: String,
+        messages: Vec<HistoryMessage>,
+    },
+    ModelPatched {
+        key: String,
+        model_ref: Option<String>,
+    },
+    Error {
+        context: String,
+        message: String,
+    },
+    Disconnected {
+        message: String,
+    },
 }
 
 /// Sends events to the UI thread and wakes the egui event loop.
@@ -164,19 +197,21 @@ async fn run(mut commands: UnboundedReceiver<Command>, emitter: Emitter) {
 
 async fn handle_command(client: &GatewayClient, cmd: Command, emitter: &Emitter) {
     match cmd {
-        Command::EnsureSession { tab_id, key, agent_id } => {
-            match client.create_session(&key, &agent_id).await {
-                Ok(_) => {
-                    emitter.emit(Event::SessionReady { tab_id, key });
-                }
-                Err(e) => {
-                    emitter.emit(Event::Error {
-                        context: format!("create session {key}"),
-                        message: format!("{e:#}"),
-                    });
-                }
+        Command::EnsureSession {
+            tab_id,
+            key,
+            agent_id,
+        } => match client.create_session(&key, &agent_id).await {
+            Ok(_) => {
+                emitter.emit(Event::SessionReady { tab_id, key });
             }
-        }
+            Err(e) => {
+                emitter.emit(Event::Error {
+                    context: format!("create session {key}"),
+                    message: format!("{e:#}"),
+                });
+            }
+        },
         Command::Send { key, text } => {
             if let Err(e) = client.chat_send(&key, &text).await {
                 emitter.emit(Event::RunDone {
@@ -201,7 +236,11 @@ async fn handle_command(client: &GatewayClient, cmd: Command, emitter: &Emitter)
         }
         Command::LoadHistory { tab_id, key } => match client.chat_history(&key).await {
             Ok(messages) => {
-                emitter.emit(Event::History { tab_id, key, messages });
+                emitter.emit(Event::History {
+                    tab_id,
+                    key,
+                    messages,
+                });
             }
             Err(e) => {
                 emitter.emit(Event::Error {

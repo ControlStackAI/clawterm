@@ -25,10 +25,10 @@ pub fn load_gateway_config() -> Result<GatewayConfig> {
     }
 
     let path = openclaw_config_path()?;
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let cfg: Value = serde_json::from_str(&raw)
-        .with_context(|| format!("parsing {}", path.display()))?;
+    let raw =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let cfg: Value =
+        serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
 
     let gateway = &cfg["gateway"];
     let port = gateway["port"].as_u64().unwrap_or(18789);

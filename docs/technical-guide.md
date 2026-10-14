@@ -99,25 +99,20 @@ ClawTerm speaks the OpenClaw gateway WebSocket protocol (v4) on
 Protocol references: `docs/gateway/protocol.md` and the TypeBox schemas
 shipped with the `openclaw` package (`packages/gateway-protocol`).
 
-## The Warp-fork boundary (licensing)
+## The Warp design-reference boundary
 
-This project was built against the open-source Warp client fork at
-`ControlStackAI/warp` (upstream `warpdotdev/warp`). That repository is **not**
-uniformly dual-licensed:
+ClawTerm uses Warp only as a product-design reference: tabs as first-class
+sessions, a block-based transcript, a per-tab model picker, and an
+input-at-bottom layout.
 
-- `warpui` / `warpui_core` (Warp's UI framework) are **MIT**.
-- Everything else — `warp_terminal`, `input_classifier`, `editor`,
-  `warp_core`, the `app` shell — is **AGPL-3.0-only**.
+No Warp source code or crate is copied, linked, or bundled. The current public
+`warpdotdev/Warp` repository does not publish the application source under an
+MIT license, so ClawTerm makes no claim that Warp is an MIT software
+dependency. Rendering and input are implemented with egui/eframe and
+ClawTerm-owned Rust code.
 
-ClawTerm is MIT-licensed, so **no AGPL Warp code is copied or linked here**.
-What ClawTerm takes from Warp is its UX model: tabs as first-class sessions, a
-block-based transcript (prompt/response pairs as discrete blocks rather than a
-raw scrollback), the per-tab model picker, and the input-at-bottom layout. The
-rendering is egui/eframe (MIT) rather than `warpui`; `warpui` remains a viable
-future rendering target since it is MIT, but it ships no text-input widget
-(Warp's editor is AGPL), which made it the wrong first move for a working app.
-
-See `THIRD_PARTY_NOTICES.md` for attribution.
+See `THIRD_PARTY_NOTICES.md` for the design-reference notice and dependency
+provenance boundary.
 
 ## License
 

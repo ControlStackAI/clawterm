@@ -9,7 +9,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::config::GatewayConfig;
 use crate::types::{message_text, AgentInfo, HistoryMessage, ModelInfo};
 
-const PROTOCOL_MIN: u32 = 3;
+const PROTOCOL_MIN: u32 = 4;
 const PROTOCOL_MAX: u32 = 4;
 const RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -110,8 +110,14 @@ impl GatewayClient {
             .context("timed out waiting for hello-ok")?
             .ok_or_else(|| anyhow!("gateway closed during handshake"))??;
         let hello: Value = serde_json::from_str(hello.to_text()?)?;
+        if hello["type"] != "res" || hello["id"] != connect_id {
+            bail!("unexpected gateway handshake response: {hello}");
+        }
         if hello["ok"] != true {
             bail!("gateway connect rejected: {}", hello["error"]);
+        }
+        if hello["payload"]["type"] != "hello-ok" {
+            bail!("gateway handshake did not return hello-ok: {hello}");
         }
 
         let (tx, mut out_rx) = mpsc::unbounded_channel::<Message>();
@@ -154,15 +160,17 @@ impl GatewayClient {
                             let _ = waiter.send(result);
                         }
                     }
-                    Some("event") => {
-                        if msg["event"].as_str() == Some("chat") {
-                            if let Some(ev) = parse_chat_event(&msg["payload"]) {
-                                let _ = events2.send(GatewayEvent::Chat(ev));
-                            }
+                    Some("event") if msg["event"].as_str() == Some("chat") => {
+                        if let Some(ev) = parse_chat_event(&msg["payload"]) {
+                            let _ = events2.send(GatewayEvent::Chat(ev));
                         }
                     }
                     _ => {}
                 }
+            }
+            let pending = std::mem::take(&mut *shared2.pending.lock().await);
+            for (_, waiter) in pending {
+                let _ = waiter.send(Err(anyhow!("gateway connection closed mid-request")));
             }
             let _ = events2.send(GatewayEvent::Disconnected("connection closed".into()));
         });
@@ -199,10 +207,7 @@ impl GatewayClient {
     /// Live agent roster from the gateway (never hardcoded).
     pub async fn list_agents(&self) -> Result<Vec<AgentInfo>> {
         let payload = self.rpc("agents.list", json!({})).await?;
-        let agents = payload["agents"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
+        let agents = payload["agents"].as_array().cloned().unwrap_or_default();
         Ok(agents
             .into_iter()
             .filter_map(|a| serde_json::from_value(a).ok())
@@ -211,7 +216,9 @@ impl GatewayClient {
 
     /// Picker-sized configured model catalog.
     pub async fn list_models(&self) -> Result<Vec<ModelInfo>> {
-        let payload = self.rpc("models.list", json!({"view": "configured"})).await?;
+        let payload = self
+            .rpc("models.list", json!({"view": "configured"}))
+            .await?;
         let models = payload["models"].as_array().cloned().unwrap_or_default();
         Ok(models
             .into_iter()
@@ -252,11 +259,8 @@ impl GatewayClient {
     /// This is a per-session override stored in the gateway session row —
     /// it does not touch openclaw.json and needs no gateway restart.
     pub async fn set_session_model(&self, key: &str, model_ref: Option<&str>) -> Result<Value> {
-        self.rpc(
-            "sessions.patch",
-            json!({"key": key, "model": model_ref}),
-        )
-        .await
+        self.rpc("sessions.patch", json!({"key": key, "model": model_ref}))
+            .await
     }
 
     /// Display-normalized transcript for a session.
@@ -319,4 +323,156 @@ fn parse_chat_event(payload: &Value) -> Option<ChatEvent> {
         message_text: msg_text,
         error_message: payload["errorMessage"].as_str().map(str::to_owned),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::accept_async;
+
+    #[test]
+    fn parses_current_chat_event_shapes() {
+        let delta = parse_chat_event(&json!({
+            "runId": "run-1",
+            "sessionKey": "agent:main:test",
+            "seq": 2,
+            "state": "delta",
+            "deltaText": "hello",
+            "replace": true
+        }))
+        .expect("delta event");
+        assert_eq!(delta.state, ChatState::Delta);
+        assert_eq!(delta.delta_text.as_deref(), Some("hello"));
+        assert!(delta.replace);
+
+        assert!(parse_chat_event(&json!({
+            "runId": "run-1",
+            "sessionKey": "agent:main:test",
+            "seq": 1,
+            "state": "status",
+            "phase": "starting_model"
+        }))
+        .is_none());
+    }
+
+    #[tokio::test]
+    async fn protocol_v4_fixture_qualifies_handshake_rpc_and_streaming() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let fixture = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(tcp).await.unwrap();
+            socket
+                .send(Message::Text(
+                    json!({
+                        "type": "event",
+                        "event": "connect.challenge",
+                        "payload": {"nonce": "fixture-nonce"}
+                    })
+                    .to_string(),
+                ))
+                .await
+                .unwrap();
+
+            let connect: Value =
+                serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            assert_eq!(connect["method"], "connect");
+            assert_eq!(connect["params"]["minProtocol"], 4);
+            assert_eq!(connect["params"]["maxProtocol"], 4);
+            assert_eq!(connect["params"]["client"]["id"], "gateway-client");
+            assert_eq!(connect["params"]["client"]["mode"], "backend");
+            assert_eq!(connect["params"]["auth"]["token"], "fixture-token");
+            socket
+                .send(Message::Text(
+                    json!({
+                        "type": "res",
+                        "id": connect["id"],
+                        "ok": true,
+                        "payload": {"type": "hello-ok", "protocol": 4}
+                    })
+                    .to_string(),
+                ))
+                .await
+                .unwrap();
+
+            let agents: Value =
+                serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            assert_eq!(agents["method"], "agents.list");
+            assert_eq!(agents["params"], json!({}));
+            socket
+                .send(Message::Text(
+                    json!({
+                        "type": "res",
+                        "id": agents["id"],
+                        "ok": true,
+                        "payload": {"agents": [{"id": "main", "name": "Main"}]}
+                    })
+                    .to_string(),
+                ))
+                .await
+                .unwrap();
+
+            let models: Value =
+                serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            assert_eq!(models["method"], "models.list");
+            assert_eq!(models["params"], json!({"view": "configured"}));
+            socket
+                .send(Message::Text(
+                    json!({
+                        "type": "res",
+                        "id": models["id"],
+                        "ok": true,
+                        "payload": {"models": [{"id": "fixture-model", "provider": "fixture"}]}
+                    })
+                    .to_string(),
+                ))
+                .await
+                .unwrap();
+
+            socket
+                .send(Message::Text(
+                    json!({
+                        "type": "event",
+                        "event": "chat",
+                        "payload": {
+                            "runId": "run-1",
+                            "sessionKey": "agent:main:test",
+                            "seq": 1,
+                            "state": "delta",
+                            "deltaText": "fixture"
+                        }
+                    })
+                    .to_string(),
+                ))
+                .await
+                .unwrap();
+        });
+
+        let client = GatewayClient::connect(&GatewayConfig {
+            url: format!("ws://{addr}"),
+            token: "fixture-token".into(),
+        })
+        .await
+        .unwrap();
+        let mut events = client.subscribe();
+        let agents = client.list_agents().await.unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].id, "main");
+        let models = client.list_models().await.unwrap();
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].model_ref(), "fixture/fixture-model");
+
+        match events.recv().await.unwrap() {
+            GatewayEvent::Chat(event) => {
+                assert_eq!(event.session_key, "agent:main:test");
+                assert_eq!(event.delta_text.as_deref(), Some("fixture"));
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+        fixture.await.unwrap();
+    }
 }
