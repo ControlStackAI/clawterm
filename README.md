@@ -1,124 +1,76 @@
+<p align="center"><img src="docs/assets/banner.svg" alt="ClawTerm — A Rust desktop client that turns tabs into persistent OpenClaw agent conversations instead of shell sessions." width="100%"></p>
+
 # ClawTerm
 
-An agentic-OS terminal: every tab is a live conversation with an
-[OpenClaw](https://docs.openclaw.ai) agent. Warp's UX — tabs, blocks, a
-per-tab model picker — but instead of a PTY shell, each tab is bound to one
-OpenClaw agent session streaming over the local gateway.
+**A Rust desktop client that turns tabs into persistent OpenClaw agent conversations instead of shell sessions.**
 
-```
-┌─ ClawTerm ──────────────────────────────────────────────────┐
-│ [ALINA] [FORGE] [+]                            ● connected  │
-│ agent: FORGE ▾   model: anthropic/claude-opus-4-7 ▾         │
-├─────────────────────────────────────────────────────────────┤
-│ you ❯  Hi FORGE — which agent are you?                      │
-│ FORGE ❮  I'm FORGE, the coder agent.                        │
-├─────────────────────────────────────────────────────────────┤
-│ ❯ message this agent — Enter to send                        │
-└─────────────────────────────────────────────────────────────┘
-```
+Prototype · MIT · [Project overview](docs/OVERVIEW.md) · [Landing-page source](docs/site/index.html)
 
-## How to run
+## What it does
 
-Prereqs: Rust (stable), a running OpenClaw gateway on the same machine
-(`openclaw gateway`), and `~/.openclaw/openclaw.json` containing
-`gateway.auth.token`.
+ClawTerm is a Rust/egui desktop client for OpenClaw. Each tab binds to one agent session and displays a block-based conversation. The gateway owns conversation history and agent execution; ClawTerm owns the interface and tab bindings.
 
-```bash
-cargo run -p clawterm-app
+This is **not a PTY shell terminal**. Its terminal-inspired layout is for talking to agents.
+
+- Live agent roster and model catalog from the gateway.
+- Per-session model selection without editing gateway configuration.
+- Streaming conversation updates and history reload.
+- Local persistence of tab layout and session bindings.
+
+## Run from source
+
+Requirements: stable Rust/Cargo, the platform libraries required by eframe, a graphical desktop session, and a compatible OpenClaw gateway. There are no prebuilt installers documented here.
+
+```sh
+git clone https://github.com/ControlStackAI/clawterm.git
+cd clawterm
+cargo run --locked -p clawterm-app
 ```
 
-The app reads the gateway port + token from `~/.openclaw/openclaw.json`
-(override with `OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_TOKEN`). The agent
-roster and model catalog are fetched live from the gateway at startup — nothing
-is hardcoded.
+By default the client reads the gateway port and `gateway.auth.token` from `~/.openclaw/openclaw.json`. For another gateway instance, supply **both** `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN` through your environment. Setting only one still requires that legacy config file. The client does not automatically honor an instance's state/config-path variables or resolve SecretRefs.
 
-Transport smoke test (no GUI, verifies the gateway round trip):
+Never paste a real token into an issue or a committed example. Model requests use the gateway's configured account and billing.
 
-```bash
-cargo run -p clawterm-gateway --example smoke
-```
+## Use it
 
-### Using it
+| Action | Control |
+| --- | --- |
+| New tab | `Ctrl+T` or `+` |
+| Close tab | `Ctrl+W` or the close button |
+| Next tab | `Ctrl+Tab` |
+| Select an agent | Agent dropdown or `:agent <id-or-name>` |
+| Select a model | Model dropdown or `:model <provider/model>` |
+| Clear model override | `:model default` |
+| Gateway command | Send `/status`, `/new`, or another supported slash command |
 
-- **Tabs**: `Ctrl+T` new tab, `Ctrl+W` close tab, `Ctrl+Tab` next tab, or use
-  the `+`/`x` buttons. Each tab is one gateway session named
-  `agent:<agentId>:clawterm-<uuid>`.
-- **Agent**: pick from the `agent` dropdown, or type `:agent forge` (id or
-  display name). Switching agents rebinds the tab to a fresh session under the
-  new agent.
-- **Model**: pick from the `model` dropdown, or type
-  `:model anthropic/claude-opus-4-7` (`:model default` clears). This issues a
-  `sessions.patch {model}` — a **per-session override** stored in the gateway
-  session row. It never edits `openclaw.json` and needs no gateway restart.
-  Verify with `/status` in the tab: the gateway reports
-  `Session selected: <model> · Reason: session override`.
-- **Slash commands** pass through to the gateway (`/status`, `/new`,
-  `/compact`, …) since they are interpreted by the chat runner server-side.
-- **Persistence**: tab layout (agent, session key, model override) is saved to
-  `~/.local/share/clawterm/state.json`. Conversations themselves live in the
-  gateway's session store; on restart ClawTerm reattaches to the same sessions
-  and replays history via `chat.history`.
+Switching agents creates a fresh session for that tab. Session/model bindings persist in `~/.local/share/clawterm/state.json`; conversations remain in the gateway store.
 
 ## Architecture
 
-Two crates, one boundary: *the gateway owns all conversation state; the app
-owns only presentation and the tab↔session binding.*
+| Crate | Responsibility |
+| --- | --- |
+| `clawterm-app` | egui/eframe UI, tabs, pickers, transcript blocks, local layout state |
+| `clawterm-gateway` | Gateway configuration, WebSocket RPCs, chat events, history projection |
 
-```
-crates/clawterm-gateway     library: OpenClaw gateway WebSocket client
-  src/config.rs             reads port + token from ~/.openclaw/openclaw.json
-  src/client.rs             protocol v4 framing: RPCs + broadcast chat events
-  src/types.rs              AgentInfo / ModelInfo / history projection
-  examples/smoke.rs         live end-to-end transport test
+See the [technical guide](docs/technical-guide.md) for protocol assumptions, configuration details, and the rendering/licensing boundary.
 
-crates/clawterm-app         binary: egui/eframe desktop app
-  src/backend.rs            tokio thread owning the connection; Command/Event
-                            channels bridge to the UI thread
-  src/app.rs                tabs, transcript blocks, input line, pickers
-  src/state.rs              ~/.local/share/clawterm/state.json (tab layout)
+## Development and verification
+
+```sh
+cargo check --locked --workspace
+cargo test --locked --workspace
 ```
 
-### Gateway protocol (discovered, not assumed)
+The following smoke test uses a **real gateway** and may create a session or invoke a model. Run it only against an intended test gateway:
 
-ClawTerm speaks the OpenClaw gateway WebSocket protocol (v4) on
-`ws://127.0.0.1:18789`:
+```sh
+cargo run --locked -p clawterm-gateway --example smoke
+```
 
-- **Handshake**: the gateway sends `connect.challenge`; the client responds
-  with a `connect` request carrying the shared token. ClawTerm connects as
-  `client.id: "gateway-client", mode: "backend"` — the device-less loopback
-  path — with scopes `operator.read/write/admin` (admin is required by
-  `sessions.patch`).
-- **Per tab**: `sessions.create {key, agentId}` → `chat.send {sessionKey,
-  message, idempotencyKey}` → broadcast `chat` events
-  (`state: delta|final|aborted|error`, token deltas in `deltaText`) filtered
-  by `sessionKey` → rendered as blocks.
-- **Roster / models**: `agents.list`, `models.list {view: "configured"}`.
-- **Model picker**: `sessions.patch {key, model: "provider/id"}`.
-- **History**: `chat.history {sessionKey}` (display-normalized by the gateway).
+**Prototype.** The source implements a particular gateway protocol and a device-less loopback handshake. Current gateway compatibility, platform packaging, and end-to-end behavior must be verified separately. This documentation does not claim that the live smoke test passed.
 
-Protocol references: `docs/gateway/protocol.md` and the TypeBox schemas
-shipped with the `openclaw` package (`packages/gateway-protocol`).
+Contributions should include reproduction steps, OS/toolchain versions, and relevant checks. Avoid real transcripts and credentials in fixtures.
 
-## The Warp-fork boundary (licensing)
+## License and attribution
 
-This project was built against the open-source Warp client fork at
-`ControlStackAI/warp` (upstream `warpdotdev/warp`). That repository is **not**
-uniformly dual-licensed:
-
-- `warpui` / `warpui_core` (Warp's UI framework) are **MIT**.
-- Everything else — `warp_terminal`, `input_classifier`, `editor`,
-  `warp_core`, the `app` shell — is **AGPL-3.0-only**.
-
-ClawTerm is MIT-licensed, so **no AGPL Warp code is copied or linked here**.
-What ClawTerm takes from Warp is its UX model: tabs as first-class sessions, a
-block-based transcript (prompt/response pairs as discrete blocks rather than a
-raw scrollback), the per-tab model picker, and the input-at-bottom layout. The
-rendering is egui/eframe (MIT) rather than `warpui`; `warpui` remains a viable
-future rendering target since it is MIT, but it ships no text-input widget
-(Warp's editor is AGPL), which made it the wrong first move for a working app.
-
-See `THIRD_PARTY_NOTICES.md` for attribution.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE). The UI uses egui/eframe. Warp-inspired interaction patterns do not mean the AGPL Warp application is bundled; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the documented boundary and attribution. This documentation refresh is not a new dependency-license audit.
