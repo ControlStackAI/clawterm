@@ -54,3 +54,15 @@ A source build and synthetic protocol tests establish local release quality.
 They do not prove live gateway compatibility, a successful model call,
 platform packaging, or end-to-end GUI behavior. Record those separately when
 they are actually exercised.
+
+## Product acceptance still to demonstrate
+
+Source-release checks above do not replace these original end-to-end goals:
+
+- [ ] A clean-clone build launches to a usable window with working tabs.
+- [ ] Two simultaneous tabs bind to different agents.
+- [ ] Input reaches the intended gateway session and streams back into its tab.
+- [ ] The per-tab model picker changes that session's model without gateway configuration changes or a restart.
+- [ ] Restarting the app preserves each tab's session, agent, model, and history.
+
+Keep these unchecked until exercised and evidenced. The current source release remains a prototype, not completed product acceptance.
