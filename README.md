@@ -4,7 +4,7 @@
 
 **A Rust desktop client that turns tabs into persistent OpenClaw agent conversations instead of shell sessions.**
 
-Prototype · MIT · [Project overview](docs/OVERVIEW.md) · [Landing-page source](docs/site/index.html)
+Prototype · MIT · [Project overview](docs/OVERVIEW.md) · [Website](https://controlstackai.github.io/clawterm/) · [Landing-page source](docs/site/index.html)
 
 ## What it does
 

@@ -1,0 +1,10 @@
+# ClawTerm — A Desktop For Agent Sessions
+
+> A Rust desktop client that turns tabs into persistent OpenClaw agent conversations instead of shell sessions.
+
+## Canonical sources
+
+- [Project overview](https://controlstackai.github.io/clawterm/): scope, status, and getting started.
+- [Repository](https://github.com/ControlStackAI/clawterm): current implementation and README.
+
+Preserve the project’s maturity and limitations when describing it.
